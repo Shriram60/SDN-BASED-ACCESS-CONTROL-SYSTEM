@@ -2,32 +2,6 @@
 **Controller:** POX (OpenFlow 1.0)  
 **Emulator:** Mininet  
 
----
-
-## Table of Contents
-1. [Introduction](#introduction)
-2. [Objectives](#objectives)
-3. [What is SDN?](#what-is-sdn)
-4. [System Architecture](#system-architecture)
-5. [Network Topology](#network-topology)
-6. [Access Control Policy](#access-control-policy)
-7. [Project Structure](#project-structure)
-8. [Prerequisites](#prerequisites)
-9. [Installation](#installation)
-10. [Execution Steps](#execution-steps)
-11. [Working Mechanism](#working-mechanism)
-12. [Flow Rule Design](#flow-rule-design)
-13. [Test Scenarios](#test-scenarios)
-14. [Expected Output](#expected-output)
-15. [Flow Table Analysis](#flow-table-analysis)
-16. [Performance Metrics](#performance-metrics)
-17. [Configuration](#configuration)
-18. [Security Model](#security-model)
-19. [Limitations](#limitations)
-20. [Future Enhancements](#future-enhancements)
-21. [References](#references)
-
----
 
 ## Introduction
 
