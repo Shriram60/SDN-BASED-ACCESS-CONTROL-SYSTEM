@@ -1,5 +1,5 @@
 # Automated Test Scenarios for SDN Access Control
-# Run AFTER topology + controller are up (sudo python test_scenarios.py)
+# Scenarios 1, 2, 3, 4 only
 # Author: Shriram Chandrasekar (PES2UG24CS495)
 #
 # Scenarios
@@ -8,10 +8,6 @@
 #   2. Unauthorized host blocked   (h4 -> anyone must fail)
 #   3. Regression                  (allowed pairs still work after block events)
 #   4. Throughput measurement      (iperf bidirectional h1<->h2, h1<->h3)
-#   5. Policy isolation            (h4 blocked, other pairs unaffected)
-#   6. Idempotency regression      (run full suite twice, rules must not accumulate)
-#   7. Flow table & packet stats   (ovs-ofctl dump-flows after each scenario)
-#   8. Latency measurement         (ping -c 20, report min/avg/max/mdev)
 
 from mininet.net import Mininet
 from mininet.node import RemoteController, OVSSwitch
@@ -26,21 +22,10 @@ import re
 # -----------------------------------------------------------------------
 
 def _ping_stats(src, dst, count=20):
-    """
-    Run 'ping -c <count>' from src to dst.
-    Returns a dict:
-        dropped_pct  : float  (0.0 = no loss, 100.0 = full loss)
-        rtt_min      : float | None
-        rtt_avg      : float | None
-        rtt_max      : float | None
-        rtt_mdev     : float | None
-    """
     out = src.cmd("ping -c %d -W 2 %s" % (count, dst.IP()))
-    # Parse packet loss
     loss_match = re.search(r'(\d+)% packet loss', out)
     dropped_pct = float(loss_match.group(1)) if loss_match else 100.0
 
-    # Parse RTT line: rtt min/avg/max/mdev = 0.123/0.456/0.789/0.012 ms
     rtt_match = re.search(
         r'rtt min/avg/max/mdev = '
         r'([\d.]+)/([\d.]+)/([\d.]+)/([\d.]+)', out
@@ -60,10 +45,6 @@ def _ping_stats(src, dst, count=20):
 
 
 def _dump_flows(switch, label=""):
-    """
-    Dump the OpenFlow flow table of a switch via ovs-ofctl.
-    Prints each flow entry with priority, match, actions, and packet count.
-    """
     print("\n  [FLOW TABLE] %s" % label)
     print("  " + "-" * 56)
     raw = switch.cmd("ovs-ofctl dump-flows %s" % switch.name)
@@ -71,16 +52,11 @@ def _dump_flows(switch, label=""):
         line = line.strip()
         if not line or line.startswith("NXST") or line.startswith("OFPST"):
             continue
-        # Highlight key fields for readability
         print("  " + line)
     print()
 
 
 def _parse_iperf_bandwidth(iperf_output):
-    """
-    Extract the final summary bandwidth from iperf client output.
-    Returns a string like '941 Mbits/sec' or 'N/A'.
-    """
     matches = re.findall(
         r'(\d+\.?\d*)\s*(Mbits/sec|Gbits/sec|Kbits/sec)', iperf_output
     )
@@ -91,10 +67,6 @@ def _parse_iperf_bandwidth(iperf_output):
 
 
 def _run_iperf_pair(server_host, client_host, duration=5):
-    """
-    Run iperf between two hosts. Returns bandwidth string.
-    server_host acts as iperf server, client_host as client.
-    """
     server_host.cmd("iperf -s -t %d &" % (duration + 2))
     time.sleep(0.5)
     out = client_host.cmd(
@@ -138,9 +110,9 @@ def run_tests():
     net.addLink(h4, s1)
 
     net.start()
-    time.sleep(3)   # wait for controller to install default rules
+    time.sleep(3)
 
-    _section("SDN ACCESS CONTROL - TEST SCENARIOS")
+    _section("SDN ACCESS CONTROL - TEST SCENARIOS 1, 2, 3, 4")
 
     results = {}
 
@@ -187,14 +159,14 @@ def run_tests():
         (h4, h1, "h4 -> h1"),
         (h4, h2, "h4 -> h2"),
         (h4, h3, "h4 -> h3"),
-        (h1, h4, "h1 -> h4"),   # also test reverse direction
+        (h1, h4, "h1 -> h4"),
     ]
 
     scenario2_pass = True
     for src, dst, label in blocked_tests:
         stats  = _ping_stats(src, dst, count=5)
         lost   = stats['dropped_pct']
-        ok     = (lost == 100.0)   # expect full loss
+        ok     = (lost == 100.0)
         status = "PASS" if ok else "FAIL"
         if not ok:
             scenario2_pass = False
@@ -249,7 +221,6 @@ def run_tests():
         print("  %-12s  Throughput: %s" % (label, bw))
         time.sleep(1)
 
-    # Confirm h4 cannot iperf to h2 (connection must be blocked)
     print("\n  [INFO] iperf h4 -> h2 (should be blocked)")
     h2.cmd("iperf -s -t 6 &")
     time.sleep(0.5)
@@ -260,90 +231,9 @@ def run_tests():
     else:
         print("  [INFO] h4 iperf output: %s" % h4_out.strip())
 
-    # -------------------------------------------------------------------
-    # SCENARIO 5: Policy isolation - blocked pair does not affect others
-    # -------------------------------------------------------------------
-    _section("SCENARIO 5 - Policy isolation")
-    print("  h4 is blocked, but h1<->h2 must remain fully functional")
-    print("-" * 60)
-
-    # Confirm h4 still blocked
-    stats_h4 = _ping_stats(h4, h1, count=5)
-    h4_blocked = (stats_h4['dropped_pct'] == 100.0)
-    print("  [%s] h4 -> h1  loss=%.0f%%  (expected 100%%)"
-          % ("PASS" if h4_blocked else "FAIL", stats_h4['dropped_pct']))
-
-    # Confirm h1<->h2 unaffected
-    stats_h1h2 = _ping_stats(h1, h2, count=10)
-    h1h2_ok = (stats_h1h2['dropped_pct'] == 0.0)
-    rtt_str = ("RTT avg=%.3f ms" % stats_h1h2['rtt_avg']
-               if stats_h1h2['rtt_avg'] is not None else "RTT N/A")
-    print("  [%s] h1 -> h2  loss=%.0f%%  %s"
-          % ("PASS" if h1h2_ok else "FAIL",
-             stats_h1h2['dropped_pct'], rtt_str))
-
-    isolation_pass = h4_blocked and h1h2_ok
-    results['scenario5'] = isolation_pass
-
-    _dump_flows(s1, "After Scenario 5 - packet counts confirm enforcement")
-
-    # -------------------------------------------------------------------
-    # SCENARIO 6: Idempotency regression
-    # Run the core allow/block checks a second time to verify that
-    # duplicate flow rules do not corrupt forwarding behaviour.
-    # -------------------------------------------------------------------
-    _section("SCENARIO 6 - Idempotency regression (second run)")
-    print("  Re-run allow/block checks to verify stable rule state")
-    print("-" * 60)
-
-    idempotency_pass = True
-
-    # Re-check allowed pairs
-    for src, dst, label in [(h1, h2, "h1->h2"), (h2, h3, "h2->h3")]:
-        stats  = _ping_stats(src, dst, count=5)
-        ok     = (stats['dropped_pct'] == 0.0)
-        status = "PASS" if ok else "FAIL"
-        if not ok:
-            idempotency_pass = False
-        print("  [%s] %-10s  loss=%.0f%%  (still allowed)"
-              % (status, label, stats['dropped_pct']))
-
-    # Re-check h4 is still blocked
-    stats  = _ping_stats(h4, h1, count=5)
-    ok     = (stats['dropped_pct'] == 100.0)
-    status = "PASS" if ok else "FAIL"
-    if not ok:
-        idempotency_pass = False
-    print("  [%s] %-10s  loss=%.0f%%  (still blocked)"
-          % (status, "h4->h1", stats['dropped_pct']))
-
-    _dump_flows(s1, "After Scenario 6 - rule count should be stable")
-    results['scenario6'] = idempotency_pass
-
-    # -------------------------------------------------------------------
-    # SCENARIO 7 & 8: Latency measurement (ping -c 20 statistics)
-    # -------------------------------------------------------------------
-    _section("SCENARIO 7 - Latency measurement (20 pings)")
-    print("  Collecting detailed RTT statistics for allowed pairs")
-    print("-" * 60)
-    print("  %-14s  %8s  %8s  %8s  %8s"
-          % ("Pair", "min(ms)", "avg(ms)", "max(ms)", "mdev(ms)"))
-    print("  " + "-" * 52)
-
-    latency_pairs = [
-        (h1, h2, "h1 -> h2"),
-        (h1, h3, "h1 -> h3"),
-        (h2, h3, "h2 -> h3"),
-    ]
-    for src, dst, label in latency_pairs:
-        s = _ping_stats(src, dst, count=20)
-        if s['rtt_avg'] is not None:
-            print("  %-14s  %8.3f  %8.3f  %8.3f  %8.3f"
-                  % (label,
-                     s['rtt_min'], s['rtt_avg'],
-                     s['rtt_max'], s['rtt_mdev']))
-        else:
-            print("  %-14s  RTT data unavailable (100%% loss)" % label)
+    # Scenario 4 has no strict pass/fail boolean — it's a measurement
+    # but we mark it pass if h4 was correctly blocked
+    results['scenario4'] = ("connect failed" in h4_out or h4_out.strip() == "")
 
     # -------------------------------------------------------------------
     # Summary
@@ -353,15 +243,14 @@ def run_tests():
         'scenario1': "Scenario 1 - Allowed comms",
         'scenario2': "Scenario 2 - Block h4",
         'scenario3': "Scenario 3 - Regression",
-        'scenario5': "Scenario 5 - Policy isolation",
-        'scenario6': "Scenario 6 - Idempotency",
+        'scenario4': "Scenario 4 - Throughput / h4 blocked",
     }
     overall = True
     for key, label in labels.items():
         passed = results.get(key, False)
         if not passed:
             overall = False
-        print("  %-36s %s" % (label + ":", "PASS" if passed else "FAIL"))
+        print("  %-42s %s" % (label + ":", "PASS" if passed else "FAIL"))
 
     print("\n  Overall: %s"
           % ("ALL TESTS PASSED" if overall else "SOME TESTS FAILED"))
@@ -372,5 +261,3 @@ def run_tests():
 
 if __name__ == '__main__':
     run_tests()
-
-

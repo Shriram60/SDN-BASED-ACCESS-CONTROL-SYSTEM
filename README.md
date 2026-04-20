@@ -44,7 +44,7 @@ All policies are bidirectional. h4 is blocked proactively at connection time usi
 .
 ├── controller.py       # POX controller — whitelist enforcement, ARP learning, flow rule installation
 ├── topology.py         # Mininet topology — 4 hosts, 1 OVS switch, RemoteController
-└── test_scenarios.py   # Automated test suite — 7 scenarios with pass/fail reporting
+└── test_scenarios.py   # Automated test suite — 4 scenarios with pass/fail reporting
 ```
 
 ---
@@ -95,7 +95,7 @@ mininet> h4 ping -c 4 h1        # should fail (100% loss)
 mininet> sh ovs-ofctl dump-flows s1
 ```
 
-### Step 5 — Run automated test suite (Terminal 3, topology must be stopped first)
+### Step 5 — Run automated test suite (Terminal 2, topology must be stopped first)
 
 ```bash
 sudo mn -c
@@ -126,58 +126,60 @@ Flow rules for allowed pairs are installed with `idle_timeout=120s` and `hard_ti
 | 1 | Allowed host communication (h1-h2, h1-h3, h2-h3, all directions) | PASS |
 | 2 | Unauthorised host h4 blocked (all directions including h1→h4) | PASS |
 | 3 | Regression — allowed pairs still work after block events | PASS |
-| 4 | Throughput measurement via iperf for all allowed pairs | PASS |
-| 5 | Policy isolation — h4 blocked without affecting h1↔h2 | PASS |
-| 6 | Idempotency — allow/block behaviour stable on second run | PASS |
-| 7 | Latency measurement — 20-ping RTT statistics for allowed pairs | PASS |
+| 4 | Throughput measurement via iperf for all allowed pairs + h4 blocked | PASS |
 
 ---
 
 ## Expected Output
 
-### Allowed communication (h1 → h2)
+### Scenario 1 — Allowed communication
 
 ```
-PING 10.0.0.2 (10.0.0.2) 56(84) bytes of data.
-64 bytes from 10.0.0.2: icmp_seq=1 ttl=64 time=17.8 ms
-64 bytes from 10.0.0.2: icmp_seq=2 ttl=64 time=0.085 ms
-4 packets transmitted, 4 received, 0% packet loss
+[PASS] h1 -> h2     loss=0%  RTT avg=10.173 ms
+[PASS] h2 -> h1     loss=0%  RTT avg=0.112 ms
+[PASS] h1 -> h3     loss=0%  RTT avg=11.108 ms
+[PASS] h2 -> h3     loss=0%  RTT avg=9.194 ms
+[PASS] h3 -> h1     loss=0%  RTT avg=0.120 ms
+[PASS] h3 -> h2     loss=0%  RTT avg=0.216 ms
 ```
 
-### Blocked host (h4 → h1)
+The higher RTT on the first ping of each pair (e.g. 10.173 ms for h1→h2) reflects the ARP resolution and PacketIn round trip to the controller. Subsequent pings drop to sub-millisecond latency once flow rules are installed in the switch.
+
+### Scenario 2 — Blocked host h4
 
 ```
-PING 10.0.0.1 (10.0.0.1) 56(84) bytes of data.
-From 10.0.0.4 icmp_seq=1 Destination Host Unreachable
-4 packets transmitted, 0 received, 100% packet loss
+[PASS] h4 -> h1     loss=100%  (expected 100%)
+[PASS] h4 -> h2     loss=100%  (expected 100%)
+[PASS] h4 -> h3     loss=100%  (expected 100%)
+[PASS] h1 -> h4     loss=100%  (expected 100%)
 ```
 
-### Throughput (iperf, allowed pairs)
+### Scenario 3 — Regression after block events
 
 ```
-h1 -> h2    17.8 Gbits/sec
-h2 -> h1    15.7 Gbits/sec
-h1 -> h3    15.4 Gbits/sec
-h4 -> h2    blocked (connect failed)
+[PASS] h1 -> h2     loss=0%  RTT avg=0.215 ms
+[PASS] h2 -> h3     loss=0%  RTT avg=0.205 ms
+[PASS] h1 -> h3     loss=0%  RTT avg=0.308 ms
 ```
 
-### Latency (20 pings, allowed pairs)
+### Scenario 4 — Throughput (iperf)
 
 ```
-Pair           min(ms)   avg(ms)   max(ms)  mdev(ms)
-h1 -> h2         0.059     0.076     0.126     0.017
-h1 -> h3         0.060     0.090     0.508     0.096
-h2 -> h3         0.056     0.100     0.531     0.100
+h1 -> h2    Throughput: 12.5 Gbits/sec
+h2 -> h1    Throughput: 12.2 Gbits/sec
+h1 -> h3    Throughput: 11.8 Gbits/sec
+
+[INFO] iperf h4 -> h2 (should be blocked)
+[PASS] h4 iperf correctly blocked (no connection)
 ```
 
 ### Test suite summary
 
 ```
-Scenario 1 - Allowed comms:          PASS
-Scenario 2 - Block h4:               PASS
-Scenario 3 - Regression:             PASS
-Scenario 5 - Policy isolation:        PASS
-Scenario 6 - Idempotency:            PASS
+Scenario 1 - Allowed comms:                  PASS
+Scenario 2 - Block h4:                       PASS
+Scenario 3 - Regression:                     PASS
+Scenario 4 - Throughput / h4 blocked:        PASS
 
 Overall: ALL TESTS PASSED
 ```
